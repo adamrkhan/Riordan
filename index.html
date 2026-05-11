@@ -1031,7 +1031,7 @@
       Replace this once your Google Apps Script web app is deployed.
       Partial responses and final submissions will both be sent here.
     */
-    const GOOGLE_SHEETS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyFta4ya9M0aNXRLgcXCby446Z8R1c-jNUxy_TqjbzmWUtWgzg6xIb-gcZaBDgKfuEZfQ/exec';
+    const GOOGLE_SHEETS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwi1NFtnz1BU8uZSDZze6xIqnZ0xx8YmMIV6OJ995seTOjsHiMQYaItU-PvM-XTHx9-Iw/exec';
 
     /*
       PARTIAL RESPONSE SETTINGS
@@ -1039,7 +1039,7 @@
       For privacy, keep the survey intro/privacy language clear that responses may be saved as the form is completed.
     */
     const ENABLE_PARTIAL_RESPONSE_CAPTURE = true;
-    const PARTIAL_SAVE_DELAY_MS = 0;
+    const PARTIAL_SAVE_DELAY_MS = 1800;
 
     const frequencyLabels = {
       1: '🚀 Bring it on — as much as possible',
@@ -1073,6 +1073,8 @@
     const pageLoadedAt = new Date();
     let hasSubmittedFinal = false;
     let hasSavedPartialThisSession = false;
+    let partialSaveTimer = null;
+    let lastPartialPayloadString = '';
     let lastFocusedQuestion = '';
 
     document.querySelectorAll('[data-question]').forEach(card => {
@@ -1238,6 +1240,10 @@
 
       const payload = getFormDataObject('partial');
       payload.partial_save_mode = 'single_latest_abandoned_version_only';
+      const payloadString = JSON.stringify(payload);
+
+      if (payloadString === lastPartialPayloadString) return;
+      lastPartialPayloadString = payloadString;
 
       try {
         await sendToSheets(payload);
@@ -1245,6 +1251,12 @@
       } catch (error) {
         console.warn('Partial response save failed:', error);
       }
+    }
+
+    function schedulePartialSave() {
+      if (!ENABLE_PARTIAL_RESPONSE_CAPTURE || hasSubmittedFinal) return;
+      clearTimeout(partialSaveTimer);
+      partialSaveTimer = setTimeout(savePartialResponse, PARTIAL_SAVE_DELAY_MS);
     }
 
     function validatePatternField(input, hint, isValidFn, emptyMessage, validMessage, invalidMessage) {
@@ -1310,10 +1322,12 @@
 
     form.addEventListener('input', () => {
       updateProgress();
+      schedulePartialSave();
     });
 
     form.addEventListener('change', () => {
       updateProgress();
+      schedulePartialSave();
     });
 
     window.addEventListener('pagehide', () => {
@@ -1418,6 +1432,7 @@
       }
 
       hasSubmittedFinal = true;
+      clearTimeout(partialSaveTimer);
       const payload = getFormDataObject('final');
       payload.remove_partial_for_session = true;
       console.log('Final survey payload:', payload);
